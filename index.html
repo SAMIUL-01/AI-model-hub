@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model Hub — Routing Console</title>
+<style>
+  :root{
+    --bg: #05070d;
+    --panel: #0c1220;
+    --panel-2: #10182b;
+    --border: #1c2740;
+    --text: #dbe4f5;
+    --text-dim: #7b8aa8;
+    --blue: #3d6bff;
+    --blue-dim: #1d3475;
+    --blue-glow: rgba(61,107,255,0.35);
+    --amber: #e8a94a;
+    --red: #e8555f;
+    --green: #3ecf8e;
+    --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background: radial-gradient(ellipse at top left, #0a1330 0%, #05070d 55%);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow:hidden;
+  }
+  #app{ display:grid; grid-template-columns: 300px 1fr; height:100vh; }
+  @media (max-width: 760px){
+    #app{ grid-template-columns: 1fr; }
+    .sidebar{ position:fixed; z-index:40; inset:0 20% 0 0; transform:translateX(-105%); transition:transform .25s ease; }
+    .sidebar.open{ transform:translateX(0); }
+    .sidebar-scrim{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:35; }
+    .sidebar-scrim.show{ display:block; }
+    .menu-btn{ display:inline-flex !important; }
+  }
+
+  .sidebar{ background: linear-gradient(180deg, var(--panel), #080c17); border-right: 1px solid var(--border); display:flex; flex-direction:column; min-height:0; }
+  .sidebar-head{ padding:18px 16px 14px; border-bottom:1px solid var(--border); }
+  .brand{ font-size:15px; font-weight:600; letter-spacing:.2px; display:flex; align-items:center; gap:8px; }
+  .brand .dot{ width:8px; height:8px; border-radius:50%; background:var(--blue); box-shadow:0 0 10px var(--blue-glow); }
+  .brand-sub{ font-size:11.5px; color:var(--text-dim); margin-top:4px; }
+
+  .scroll-area{ flex:1; overflow-y:auto; padding:10px; min-height:0; }
+  .scroll-area::-webkit-scrollbar{ width:6px; }
+  .scroll-area::-webkit-scrollbar-thumb{ background:var(--border); border-radius:3px; }
+
+  .section-label{ font-size:10.5px; color:var(--text-dim); margin:12px 4px 6px; letter-spacing:.3px; }
+  .section-label:first-child{ margin-top:2px; }
+
+  .msg.user, .btn-primary, .brand .dot, .mode-toggle button.on, .chat-item.active, .model-card.active{ transition: background-color .3s ease, border-color .3s ease, box-shadow .3s ease, color .3s ease; }
+  .project-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .project-chip{ display:flex; align-items:center; gap:6px; background:var(--panel-2); border:1px solid var(--border); border-radius:20px; padding:5px 10px; font-size:11.5px; color:var(--text-dim); cursor:pointer; }
+  .project-chip:hover{ border-color:#2a3a63; }
+  .project-chip.active{ background:var(--blue-dim); border-color:var(--blue); color:#dbe6ff; }
+  .project-chip .px{ background:none; border:none; color:inherit; opacity:.6; cursor:pointer; font-size:12px; }
+  .project-chip .px:hover{ opacity:1; }
+
+  .chat-item{ display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px; cursor:pointer; font-size:12.5px; color:var(--text-dim); margin-bottom:3px; }
+  .chat-item:hover{ background:var(--panel-2); }
+  .chat-item.active{ background:var(--blue-dim); color:#dbe6ff; }
+  .chat-item .ct{ flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chat-item .cx{ opacity:0; background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:13px; }
+  .chat-item:hover .cx{ opacity:1; }
+
+  .model-card{ background: var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:11px 12px; margin-bottom:8px; cursor:pointer; transition: border-color .15s ease; }
+  .model-card:hover{ border-color:#2a3a63; }
+  .model-card.active{ border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue) inset; }
+  .model-card.limited{ opacity:.55; }
+  .mc-top{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .mc-name{ font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mc-badges{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  .status-dot{ width:7px; height:7px; border-radius:50%; }
+  .status-dot.ok{ background:var(--green); }
+  .status-dot.limited{ background:var(--red); }
+  .status-dot.unknown{ background:#3a4666; }
+  .mc-meta{ font-size:11px; color:var(--text-dim); margin-top:5px; display:flex; justify-content:space-between; font-family:var(--mono); }
+  .mc-provider{ text-transform:capitalize; }
+  .mc-actions{ display:flex; gap:10px; margin-top:8px; }
+  .mc-actions button{ background:none; border:none; color:var(--text-dim); font-size:11px; cursor:pointer; padding:0; }
+  .mc-actions button:hover{ color:var(--text); }
+
+  .sidebar-foot{ padding:12px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:8px; }
+  .cloud-status{ font-size:10.5px; color:var(--text-dim); font-family:var(--mono); display:flex; align-items:center; gap:6px; padding:0 2px; }
+
+  .btn{ border:1px solid var(--border); background: var(--panel-2); color:var(--text); padding:9px 12px; border-radius:8px; font-size:12.5px; cursor:pointer; font-family:var(--sans); }
+  .btn:hover{ border-color:#33447a; }
+  .btn-primary{ background:var(--blue); border-color:var(--blue); color:#fff; font-weight:600; }
+  .btn-primary:hover{ background:#3260f0; }
+  .btn-ghost{ background:transparent; }
+  .btn-row{ display:flex; gap:8px; }
+  .btn-row .btn{ flex:1; }
+
+  .main{ display:flex; flex-direction:column; min-width:0; }
+  .topbar{ display:flex; align-items:center; gap:14px; padding:14px 20px; border-bottom:1px solid var(--border); background: rgba(8,12,23,.6); }
+  .menu-btn{ display:none; background:none; border:none; color:var(--text); font-size:20px; cursor:pointer; }
+  .mode-toggle{ display:flex; background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:3px; }
+  .mode-toggle button{ background:none; border:none; color:var(--text-dim); font-size:12px; padding:6px 12px; border-radius:6px; cursor:pointer; }
+  .mode-toggle button.on{ background:var(--blue-dim); color:#cfe0ff; }
+  .active-indicator{ font-size:12px; color:var(--text-dim); font-family:var(--mono); display:flex; align-items:center; gap:6px; }
+  .active-indicator .status-dot{ width:6px; height:6px; }
+  select.model-select{ background:var(--panel-2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-size:12.5px; font-family:var(--sans); }
+  .spacer{ flex:1; }
+
+  .messages{ flex:1; overflow-y:auto; padding:24px 20px; display:flex; flex-direction:column; gap:16px; }
+  .messages::-webkit-scrollbar{ width:6px; }
+  .messages::-webkit-scrollbar-thumb{ background:var(--border); border-radius:3px; }
+  .empty-state{ margin:auto; text-align:center; color:var(--text-dim); max-width:360px; }
+  .empty-state h2{ color:var(--text); font-size:18px; font-weight:600; margin-bottom:8px; }
+  .empty-state p{ font-size:13px; line-height:1.6; }
+
+  .msg{ max-width:72%; padding:11px 14px; border-radius:12px; font-size:14px; line-height:1.55; white-space:pre-wrap; }
+  .msg.user{ align-self:flex-end; background:var(--blue); color:#fff; border-bottom-right-radius:3px; }
+  .msg.assistant{ align-self:flex-start; background:var(--panel-2); border:1px solid var(--border); border-bottom-left-radius:3px; }
+  .msg.system{ align-self:center; background:none; color:var(--text-dim); font-size:11.5px; font-family:var(--mono); border:1px dashed var(--border); padding:6px 12px; border-radius:20px; }
+  .msg-tag{ display:block; font-size:10px; color:var(--text-dim); margin-bottom:4px; font-family:var(--mono); }
+  .msg.user .msg-tag{ color:rgba(255,255,255,.7); text-align:right; }
+
+  .composer{ padding:16px 20px 20px; border-top:1px solid var(--border); }
+  .composer-row{ display:flex; gap:10px; align-items:flex-end; }
+  textarea#input{ flex:1; resize:none; background:var(--panel-2); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:12px 14px; font-family:var(--sans); font-size:14px; max-height:140px; min-height:44px; }
+  textarea#input:focus{ outline:none; border-color:var(--blue); }
+  #sendBtn{ height:44px; padding:0 20px; }
+
+  .modal-scrim{ position:fixed; inset:0; background:rgba(2,4,10,.65); display:none; align-items:center; justify-content:center; z-index:60; padding:20px; }
+  .modal-scrim.show{ display:flex; }
+  .modal{ background:var(--panel); border:1px solid var(--border); border-radius:14px; width:100%; max-width:440px; max-height:88vh; overflow-y:auto; padding:22px; }
+  .modal h3{ font-size:15px; margin-bottom:16px; }
+  .field{ margin-bottom:13px; }
+  .field label{ display:block; font-size:11.5px; color:var(--text-dim); margin-bottom:5px; }
+  .field input, .field select{ width:100%; background:var(--panel-2); border:1px solid var(--border); color:var(--text); padding:9px 10px; border-radius:7px; font-size:13px; font-family:var(--sans); }
+  .field input:focus, .field select:focus{ outline:none; border-color:var(--blue); }
+  .field-hint{ font-size:10.5px; color:var(--text-dim); margin-top:4px; }
+  .two-col{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:18px; flex-wrap:wrap; }
+  .danger-link{ color:var(--red); font-size:12px; cursor:pointer; background:none; border:none; }
+  textarea.config-json{ width:100%; height:140px; background:var(--panel-2); border:1px solid var(--border); color:var(--text); border-radius:7px; padding:10px; font-family:var(--mono); font-size:11.5px; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="sidebar-scrim" id="scrim"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <div class="brand"><span class="dot"></span>Model Hub</div>
+      <div class="brand-sub">your keys, your models, one console</div>
+    </div>
+    <div class="scroll-area" id="scrollArea">
+      <div class="section-label">PROJECTS</div>
+      <div class="project-chips" id="projectChips"></div>
+<div class="section-label">CHATS</div>
+      <button class="btn btn-ghost" id="newChatBtn" style="width:100%; text-align:left; margin-bottom:8px;">+ New chat</button>
+      <div id="chatList"></div>
+      <div class="section-label">MODELS</div>
+      <div id="roster"></div>
+    </div>
+    <div class="sidebar-foot">
+      <div class="cloud-status" id="cloudStatus"><span class="status-dot unknown"></span>cloud: off</div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="addModelBtn">+ Add model</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="cloudBtn">Cloud sync</button>
+        <button class="btn btn-ghost" id="exportBtn">Export</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <button class="menu-btn" id="menuBtn">☰</button>
+      <div class="mode-toggle">
+        <button id="modeAuto" class="on">Auto</button>
+        <button id="modeManual">Manual</button>
+      </div>
+      <select class="model-select" id="manualSelect" style="display:none;"></select>
+      <div class="spacer"></div>
+      <div class="active-indicator" id="activeIndicator"></div>
+    </div>
+
+    <div class="messages" id="messages">
+      <div class="empty-state" id="emptyState">
+        <h2>No models yet</h2>
+        <p>Add your first model with its API key, then start chatting. In Auto mode, Model Hub tries your models in priority order and skips any that are rate-limited or out of quota.</p>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="composer-row">
+        <textarea id="input" placeholder="Message..." rows="1"></textarea>
+        <button class="btn btn-primary" id="sendBtn">Send</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-scrim" id="modelModalScrim">
+  <div class="modal">
+    <h3 id="modalTitle">Add model</h3>
+    <div class="field">
+      <label>Display name</label>
+      <input type="text" id="f_name" placeholder="e.g. GPT-5.6 main">
+    </div>
+    <div class="two-col">
+      <div class="field">
+        <label>Provider format</label>
+        <select id="f_provider">
+          <option value="openai">OpenAI-compatible</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="gemini">Google Gemini</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Priority (1 = tried first)</label>
+        <input type="number" id="f_priority" value="1" min="1">
+      </div>
+    </div>
+    <div class="field">
+      <label>Model ID</label>
+      <input type="text" id="f_modelid" placeholder="e.g. gpt-4o, claude-fable-5-1, gemini-2.5-pro">
+    </div>
+    <div class="field">
+      <label>Quick fill (optional)</label>
+      <select id="f_preset">
+        <option value="">— pick a known gateway/provider to auto-fill endpoint —</option>
+        <option value="https://api.openai.com/v1/chat/completions">OpenAI</option>
+        <option value="https://api.experientiallabs.ai/v1/chat/completions">Experiential Labs (multi-model gateway)</option>
+        <option value="https://openrouter.ai/api/v1/chat/completions">OpenRouter (multi-model gateway)</option>
+        <option value="https://api.x.ai/v1/chat/completions">Grok (xAI)</option>
+        <option value="https://api.deepseek.com/v1/chat/completions">DeepSeek</option>
+        <option value="https://api.groq.com/openai/v1/chat/completions">Groq</option>
+        <option value="https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions">Qwen (Alibaba)</option>
+        <option value="https://api.moonshot.cn/v1/chat/completions">Kimi (Moonshot)</option>
+        <option value="https://integrate.api.nvidia.com/v1/chat/completions">NVIDIA NIM</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>API endpoint</label>
+      <input type="text" id="f_endpoint" placeholder="auto-filled from provider">
+      <div class="field-hint">Auto-filled by Quick fill above, or by Provider format — edit only if you need a different address.</div>
+    </div>
+    <div class="field">
+      <label>API key</label>
+      <input type="password" id="f_apikey" placeholder="sk-...">
+      <div class="field-hint">Stored in local storage (and in your cloud sync doc if enabled).</div>
+    </div>
+    <div class="field">
+      <label>Daily request limit (optional)</label>
+      <input type="number" id="f_limit" placeholder="leave blank = unlimited" min="0">
+    </div>
+    <div class="modal-actions">
+      <button class="danger-link" id="deleteModelBtn" style="display:none;">Delete model</button>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" id="cancelModelBtn">Cancel</button>
+      <button class="btn btn-primary" id="saveModelBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-scrim" id="configModalScrim">
+  <div class="modal">
+    <h3 id="configModalTitle">Export config</h3>
+    <p style="font-size:12px; color:var(--text-dim); margin-bottom:10px;" id="configModalHint"></p>
+    <textarea class="config-json" id="configJson"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="cancelConfigBtn">Close</button>
+      <button class="btn btn-primary" id="configActionBtn">Copy</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-scrim" id="cloudModalScrim">
+  <div class="modal">
+    <h3>Cloud sync</h3>
+    <p style="font-size:11.5px; color:var(--text-dim); margin-bottom:12px; line-height:1.6;">
+      Syncs your models + chats across devices using your own free Firebase project (Firestore). Create one at
+      console.firebase.google.com, enable Firestore in test mode, paste the web config below, and pick any
+      long random Sync ID as your private passphrase — anyone with your config + Sync ID can read this data,
+      so keep it secret like a password.
+    </p>
+    <div class="field">
+      <label>Firebase web config (JSON)</label>
+      <textarea class="config-json" id="firebaseConfigInput" style="height:110px;" placeholder='{"apiKey":"...","projectId":"...","appId":"..."}'></textarea>
+    </div>
+    <div class="field">
+      <label>Sync ID (your private passphrase)</label>
+      <input type="text" id="syncIdInput" placeholder="e.g. sam-mh-9f2k1x">
+    </div>
+    <div class="modal-actions">
+      <button class="danger-link" id="disconnectCloudBtn">Disconnect</button>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" id="cancelCloudBtn">Close</button>
+      <button class="btn btn-ghost" id="pullCloudBtn">Pull</button>
+      <button class="btn btn-ghost" id="pushCloudBtn">Push</button>
+      <button class="btn btn-primary" id="connectCloudBtn">Connect</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const DEFAULT_ENDPOINTS = {
+    openai: 'https://api.openai.com/v1/chat/completions',
+    anthropic: 'https://api.anthropic.com/v1/messages',
+    gemini: 'https://generativelanguage.googleapis.com/v1beta/models/'
+  };
+
+  const THEME_BY_PROVIDER = {
+    openai:    { blue:'#10a37f', blueDim:'#0d3b32', glow:'rgba(16,163,127,0.35)' },
+    anthropic: { blue:'#da7756', blueDim:'#4a2c1f', glow:'rgba(218,119,86,0.35)' },
+    gemini:    { blue:'#4285f4', blueDim:'#17335e', glow:'rgba(66,133,244,0.35)' },
+    default:   { blue:'#3d6bff', blueDim:'#1d3475', glow:'rgba(61,107,255,0.35)' }
+  };
+  function applyTheme(provider){
+    const t = THEME_BY_PROVIDER[provider] || THEME_BY_PROVIDER.default;
+    document.documentElement.style.setProperty('--blue', t.blue);
+    document.documentElement.style.setProperty('--blue-dim', t.blueDim);
+    document.documentElement.style.setProperty('--blue-glow', t.glow);
+  }
+
+  let state = { models: [], mode:'auto', manualModelId:null, chats: [], currentChatId: null, history: [], projects: [], activeProjectFilter: null };
+  let cloud = { db:null, config:null, syncId:null };
+
+  function uid(){ return 'm_' + Math.random().toString(36).slice(2, 10); }
+  function todayKey(){ const d = new Date(); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
+  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  // ---------- LOCAL PERSISTENCE ----------
+  function loadLocal(){
+    try{
+      const raw = localStorage.getItem('modelhub_state_v2');
+      if(raw){
+        const parsed = JSON.parse(raw);
+        state.models = parsed.models || [];
+        state.chats = parsed.chats || [];
+        state.projects = parsed.projects || [];
+      }
+    }catch(e){ console.error('load failed', e); }
+    try{
+      const rawCloud = localStorage.getItem('modelhub_cloud_v1');
+      if(rawCloud){
+        const c = JSON.parse(rawCloud);
+        cloud.config = c.config; cloud.syncId = c.syncId;
+      }
+    }catch(e){}
+  }
+  function saveLocal(){
+    localStorage.setItem('modelhub_state_v2', JSON.stringify({ models: state.models, chats: state.chats, projects: state.projects }));
+  }
+  function saveAll(){
+    saveLocal();
+    if(cloud.db) pushToCloud();
+  }
+
+  function resetDailyIfNeeded(model){
+    if(model.usedDate !== todayKey()){ model.usedDate = todayKey(); model.usedCount = 0; model.limitHit = false; }
+  }
+  function isAvailable(model){
+    resetDailyIfNeeded(model);
+    if(model.dailyLimit && model.usedCount >= model.dailyLimit) return false;
+    if(model.limitHit) return false;
+    return true;
+  }
+
+  // ---------- CHATS ----------
+  function newChat(silent){
+    const chat = { id: uid(), title: 'New chat', messages: [], updatedAt: Date.now(), projectId: state.activeProjectFilter };
+    state.chats.unshift(chat);
+    state.currentChatId = chat.id;
+    state.history = chat.messages;
+    if(!silent){ saveAll(); renderChatList(); renderMessages(); }
+    return chat;
+  }
+  function switchChat(id){
+    const chat = state.chats.find(c=>c.id===id);
+    if(!chat) return;
+    state.currentChatId = id;
+    state.history = chat.messages;
+    renderChatList(); renderMessages();
+  }
+  function deleteChat(id){
+    state.chats = state.chats.filter(c=>c.id!==id);
+    if(state.currentChatId === id){
+      if(state.chats.length){ state.currentChatId = state.chats[0].id; state.history = state.chats[0].messages; }
+      else { newChat(true); }
+    }
+    saveAll(); renderChatList(); renderMessages();
+  }
+  function currentChat(){ return state.chats.find(c=>c.id===state.currentChatId); }
+
+  function renderChatList(){
+    const box = document.getElementById('chatList');
+    box.innerHTML = '';
+    const visible = state.chats.filter(c => state.activeProjectFilter===null || c.projectId===state.activeProjectFilter);
+    visible.forEach(c=>{
+      const div = document.createElement('div');
+      div.className = 'chat-item' + (c.id===state.currentChatId ? ' active':'');
+      div.innerHTML = `<span class="ct">${escapeHtml(c.title||'New chat')}</span><button class="cx" data-id="${c.id}">×</button>`;
+      div.addEventListener('click',(e)=>{ if(e.target.classList.contains('cx')) return; switchChat(c.id); });
+      div.querySelector('.cx').addEventListener('click',(e)=>{ e.stopPropagation(); if(confirm('Delete this chat?')) deleteChat(c.id); });
+      box.appendChild(div);
+    });
+  }
+
+  function newProject(){
+    const name = prompt('Project name:');
+    if(!name) return;
+    state.projects.push({ id: uid(), name: name.trim() });
+    saveAll(); renderProjects();
+  }
+  function selectProjectFilter(id){
+    state.activeProjectFilter = state.activeProjectFilter===id ? null : id;
+    renderProjects(); renderChatList();
+  }
+  function deleteProject(id){
+    state.chats.forEach(c=>{ if(c.projectId===id) c.projectId=null; });
+    state.projects = state.projects.filter(p=>p.id!==id);
+    if(state.activeProjectFilter===id) state.activeProjectFilter=null;
+    saveAll(); renderProjects(); renderChatList();
+  }
+  function renderProjects(){
+    const box = document.getElementById('projectChips');
+    if(!box) return;
+    box.innerHTML = '';
+    const allChip = document.createElement('div');
+    allChip.className = 'project-chip' + (state.activeProjectFilter===null ? ' active':'');
+    allChip.textContent = 'All chats';
+    allChip.addEventListener('click', ()=>{ state.activeProjectFilter=null; renderProjects(); renderChatList(); });
+    box.appendChild(allChip);
+    state.projects.forEach(p=>{
+      const chip = document.createElement('div');
+      chip.className = 'project-chip' + (state.activeProjectFilter===p.id ? ' active':'');
+      chip.innerHTML = `<span>${escapeHtml(p.name)}</span><button class="px" data-id="${p.id}">×</button>`;
+      chip.addEventListener('click', (e)=>{ if(e.target.classList.contains('px')) return; selectProjectFilter(p.id); });
+      chip.querySelector('.px').addEventListener('click', (e)=>{ e.stopPropagation(); if(confirm('Delete project "'+p.name+'"? Chats stay, just unassigned.')) deleteProject(p.id); });
+      box.appendChild(chip);
+    });
+    const addChip = document.createElement('div');
+    addChip.className = 'project-chip';
+    addChip.textContent = '+ New';
+    addChip.addEventListener('click', newProject);
+    box.appendChild(addChip);
+  }
+
+  // ---------- RENDER MODELS ----------
+  function renderRoster(){
+    const roster = document.getElementById('roster');
+    roster.innerHTML = '';
+    const sorted = [...state.models].sort((a,b)=>a.priority-b.priority);
+    sorted.forEach(m=>{
+      resetDailyIfNeeded(m);
+      const card = document.createElement('div');
+      card.className = 'model-card' + (m.id===state.manualModelId && state.mode==='manual' ? ' active':'') + (!isAvailable(m) ? ' limited':'');
+      const dotClass = m.limitHit || (m.dailyLimit && m.usedCount>=m.dailyLimit) ? 'limited' : (m.lastOk ? 'ok' : 'unknown');
+      card.innerHTML = `
+        <div class="mc-top">
+          <div class="mc-name">${escapeHtml(m.name)}</div>
+          <div class="mc-badges"><span class="status-dot ${dotClass}"></span></div>
+        </div>
+        <div class="mc-meta">
+          <span class="mc-provider">${m.provider}</span>
+          <span>#${m.priority} · ${m.usedCount||0}${m.dailyLimit? '/'+m.dailyLimit : ''} today</span>
+        </div>
+        <div class="mc-actions">
+          <button data-act="edit" data-id="${m.id}">Edit</button>
+          <button data-act="use" data-id="${m.id}">Use manually</button>
+        </div>
+      `;
+      roster.appendChild(card);
+    });
+    document.getElementById('emptyState').style.display = state.models.length ? 'none' : 'block';
+    renderManualSelect();
+    renderActiveIndicator();
+  }
+  function renderManualSelect(){
+    const sel = document.getElementById('manualSelect');
+    sel.innerHTML = '';
+    const sorted = [...state.models].sort((a,b)=>a.priority-b.priority);
+    sorted.forEach(m=>{
+      const opt = document.createElement('option');
+      opt.value = m.id; opt.textContent = m.name;
+      sel.appendChild(opt);
+    });
+    if(!state.manualModelId && sorted.length) state.manualModelId = sorted[0].id;
+    sel.value = state.manualModelId;
+  }
+  function renderActiveIndicator(){
+    const el = document.getElementById('activeIndicator');
+    if(state.mode === 'manual'){
+      const m = state.models.find(x=>x.id===state.manualModelId);
+      el.innerHTML = m ? `<span class="status-dot ${isAvailable(m)?'ok':'limited'}"></span>${escapeHtml(m.name)}` : 'no model selected';
+      applyTheme(m ? m.provider : 'default');
+    } else {
+      const sorted = [...state.models].sort((a,b)=>a.priority-b.priority);
+      const next = sorted.find(isAvailable);
+      el.innerHTML = next ? `<span class="status-dot ok"></span>auto → ${escapeHtml(next.name)}` : `<span class="status-dot limited"></span>all models unavailable`;
+      applyTheme(next ? next.provider : 'default');
+    }
+  }
+  function renderCloudStatus(){
+    const el = document.getElementById('cloudStatus');
+    if(cloud.db){ el.innerHTML = `<span class="status-dot ok"></span>cloud: synced (${escapeHtml(cloud.syncId||'')})`; }
+    else { el.innerHTML = `<span class="status-dot unknown"></span>cloud: off`; }
+  }
+
+  function renderMessages(){
+    const box = document.getElementById('messages');
+    const empty = document.getElementById('emptyState');
+    box.innerHTML = '';
+    if(!state.history.length){
+      box.appendChild(empty);
+      empty.style.display='block';
+      return;
+    }
+    state.history.forEach(m=>{
+      const div = document.createElement('div');
+      div.className = 'msg ' + m.role;
+      if(m.role === 'system'){ div.textContent = m.content; }
+      else{ div.innerHTML = (m.tag? `<span class="msg-tag">${escapeHtml(m.tag)}</span>`:'') + escapeHtml(m.content); }
+      box.appendChild(div);
+    });
+    box.scrollTop = box.scrollHeight;
+  }
+
+  // ---------- MODEL CRUD ----------
+  let editingId = null;
+  function openModelModal(id){
+    editingId = id || null;
+    const m = id ? state.models.find(x=>x.id===id) : null;
+    document.getElementById('modalTitle').textContent = m ? 'Edit model' : 'Add model';
+    document.getElementById('f_name').value = m ? m.name : '';
+    document.getElementById('f_provider').value = m ? m.provider : 'openai';
+    document.getElementById('f_priority').value = m ? m.priority : (state.models.length+1);
+    document.getElementById('f_modelid').value = m ? m.modelId : '';
+    document.getElementById('f_endpoint').value = m ? m.endpoint : DEFAULT_ENDPOINTS.openai;
+    document.getElementById('f_apikey').value = m ? m.apiKey : '';
+    document.getElementById('f_limit').value = m && m.dailyLimit ? m.dailyLimit : '';
+    document.getElementById('deleteModelBtn').style.display = m ? 'inline-block' : 'none';
+    document.getElementById('modelModalScrim').classList.add('show');
+  }
+  function closeModelModal(){ document.getElementById('modelModalScrim').classList.remove('show'); }
+
+  document.getElementById('f_provider').addEventListener('change', (e)=>{
+    const ep = document.getElementById('f_endpoint');
+    if(!editingId || ep.value === DEFAULT_ENDPOINTS[Object.keys(DEFAULT_ENDPOINTS).find(k=>DEFAULT_ENDPOINTS[k]===ep.value)]){
+      ep.value = DEFAULT_ENDPOINTS[e.target.value];
+    }
+  });
+  document.getElementById('f_preset').addEventListener('change', (e)=>{
+    if(!e.target.value) return;
+    document.getElementById('f_endpoint').value = e.target.value;
+    document.getElementById('f_provider').value = 'openai';
+  });
+  document.getElementById('addModelBtn').addEventListener('click', ()=>openModelModal(null));
+  document.getElementById('cancelModelBtn').addEventListener('click', closeModelModal);
+  document.getElementById('modelModalScrim').addEventListener('click', (e)=>{ if(e.target.id==='modelModalScrim') closeModelModal(); });
+
+  document.getElementById('saveModelBtn').addEventListener('click', ()=>{
+    const name = document.getElementById('f_name').value.trim();
+    const provider = document.getElementById('f_provider').value;
+    const priority = parseInt(document.getElementById('f_priority').value) || 1;
+    const modelId = document.getElementById('f_modelid').value.trim();
+    const endpoint = document.getElementById('f_endpoint').value.trim();
+    const apiKey = document.getElementById('f_apikey').value.trim();
+    const limitRaw = document.getElementById('f_limit').value;
+    const dailyLimit = limitRaw ? parseInt(limitRaw) : 0;
+    if(!name || !modelId || !endpoint || !apiKey){ alert('Fill in name, model ID, endpoint and API key.'); return; }
+    if(editingId){
+      const m = state.models.find(x=>x.id===editingId);
+      Object.assign(m, { name, provider, priority, modelId, endpoint, apiKey, dailyLimit });
+    } else {
+      state.models.push({ id: uid(), name, provider, priority, modelId, endpoint, apiKey, dailyLimit, usedCount:0, usedDate: todayKey(), limitHit:false, lastOk:false });
+    }
+    saveAll(); closeModelModal(); renderRoster(); renderMessages();
+  });
+  document.getElementById('deleteModelBtn').addEventListener('click', ()=>{
+    if(!editingId) return;
+    if(!confirm('Delete this model?')) return;
+    state.models = state.models.filter(x=>x.id!==editingId);
+    if(state.manualModelId===editingId) state.manualModelId=null;
+    saveAll(); closeModelModal(); renderRoster(); renderMessages();
+  });
+  document.getElementById('roster').addEventListener('click', (e)=>{
+    const btn = e.target.closest('button[data-act]');
+    if(!btn) return;
+    const id = btn.dataset.id;
+    if(btn.dataset.act==='edit') openModelModal(id);
+    if(btn.dataset.act==='use'){
+      state.manualModelId = id; state.mode = 'manual';
+      document.getElementById('modeAuto').classList.remove('on');
+      document.getElementById('modeManual').classList.add('on');
+      document.getElementById('manualSelect').style.display='inline-block';
+      renderRoster();
+    }
+  });
+
+  document.getElementById('newChatBtn').addEventListener('click', ()=>newChat());
+
+  document.getElementById('modeAuto').addEventListener('click', ()=>{
+    state.mode='auto';
+    document.getElementById('modeAuto').classList.add('on');
+    document.getElementById('modeManual').classList.remove('on');
+    document.getElementById('manualSelect').style.display='none';
+    renderActiveIndicator();
+  });
+  document.getElementById('modeManual').addEventListener('click', ()=>{
+    state.mode='manual';
+    document.getElementById('modeManual').classList.add('on');
+    document.getElementById('modeAuto').classList.remove('on');
+    document.getElementById('manualSelect').style.display='inline-block';
+    renderActiveIndicator();
+  });
+  document.getElementById('manualSelect').addEventListener('change', (e)=>{ state.manualModelId = e.target.value; renderRoster(); });
+
+  document.getElementById('menuBtn').addEventListener('click', ()=>{
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('scrim').classList.add('show');
+  });
+  document.getElementById('scrim').addEventListener('click', ()=>{
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('scrim').classList.remove('show');
+  });
+
+  // ---------- EXPORT ----------
+  document.getElementById('exportBtn').addEventListener('click', ()=>{
+    document.getElementById('configModalTitle').textContent = 'Export config';
+    document.getElementById('configModalHint').textContent = 'Copy this and keep it safe. Useful as a one-off backup even with cloud sync on.';
+    document.getElementById('configJson').value = JSON.stringify({ models: state.models, chats: state.chats }, null, 2);
+    document.getElementById('configActionBtn').textContent = 'Copy';
+    document.getElementById('configModalScrim').classList.add('show');
+  });
+  document.getElementById('cancelConfigBtn').addEventListener('click', ()=>{ document.getElementById('configModalScrim').classList.remove('show'); });
+  document.getElementById('configActionBtn').addEventListener('click', ()=>{
+    navigator.clipboard.writeText(document.getElementById('configJson').value).then(()=>{
+      document.getElementById('configActionBtn').textContent = 'Copied!';
+      setTimeout(()=> document.getElementById('configActionBtn').textContent='Copy', 1200);
+    });
+  });
+
+  // ---------- CLOUD SYNC ----------
+  function loadFirebaseSdk(cb){
+    if(window.firebase && window.firebase.firestore){ cb(); return; }
+    const s1=document.createElement('script'); s1.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js';
+    s1.onload=()=>{
+      const s2=document.createElement('script'); s2.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js';
+      s2.onload=cb;
+      s2.onerror=()=>alert('Firebase SDK load failed — check internet connection.');
+      document.head.appendChild(s2);
+    };
+    s1.onerror=()=>alert('Firebase SDK load failed — check internet connection.');
+    document.head.appendChild(s1);
+  }
+  function connectCloud(configStr, syncId, silent){
+    let config;
+    try{ config = JSON.parse(configStr); }catch(e){ if(!silent) alert('Firebase config JSON ঠিক নেই।'); return; }
+    if(!syncId){ if(!silent) alert('একটা Sync ID দাও।'); return; }
+    loadFirebaseSdk(()=>{
+      try{
+        if(!firebase.apps.length) firebase.initializeApp(config);
+        cloud.db = firebase.firestore();
+        cloud.syncId = syncId;
+        cloud.config = config;
+        localStorage.setItem('modelhub_cloud_v1', JSON.stringify({config, syncId}));
+        renderCloudStatus();
+        pullFromCloud(true);
+      }catch(e){ if(!silent) alert('Connect failed: '+e.message); }
+    });
+  }
+  function pushToCloud(){
+    if(!cloud.db) return;
+    cloud.db.collection('modelhub_sync').doc(cloud.syncId).set({
+      models: state.models, chats: state.chats, projects: state.projects, updatedAt: Date.now()
+    }).catch(e=>console.error('push failed', e));
+  }
+  function pullFromCloud(silent){
+    if(!cloud.db) return;
+    cloud.db.collection('modelhub_sync').doc(cloud.syncId).get().then(doc=>{
+      if(doc.exists){
+        const data = doc.data();
+        if(!silent && !confirm('Cloud data দিয়ে local data replace করবো?')) return;
+        state.models = data.models || state.models;
+        if(data.chats && data.chats.length) state.chats = data.chats;
+        state.projects = data.projects || state.projects;
+        if(!state.chats.length) newChat(true);
+        else if(!state.currentChatId || !state.chats.find(c=>c.id===state.currentChatId)){
+          state.currentChatId = state.chats[0].id; state.history = state.chats[0].messages;
+        }
+        saveLocal(); renderRoster(); renderChatList(); renderMessages(); renderProjects();
+      } else if(!silent){ alert('Cloud এ এখনো কিছু নেই — আগে Push করো।'); }
+    }).catch(e=>{ if(!silent) alert('Pull failed: '+e.message); });
+  }
+  function disconnectCloud(){
+    cloud = { db:null, config:null, syncId:null };
+    localStorage.removeItem('modelhub_cloud_v1');
+    renderCloudStatus();
+  }
+
+  document.getElementById('cloudBtn').addEventListener('click', ()=>{
+    document.getElementById('firebaseConfigInput').value = cloud.config ? JSON.stringify(cloud.config, null, 2) : '';
+    document.getElementById('syncIdInput').value = cloud.syncId || '';
+    document.getElementById('cloudModalScrim').classList.add('show');
+  });
+  document.getElementById('cancelCloudBtn').addEventListener('click', ()=> document.getElementById('cloudModalScrim').classList.remove('show'));
+  document.getElementById('connectCloudBtn').addEventListener('click', ()=>{
+    connectCloud(document.getElementById('firebaseConfigInput').value.trim(), document.getElementById('syncIdInput').value.trim(), false);
+  });
+  document.getElementById('pushCloudBtn').addEventListener('click', ()=>{ if(!cloud.db){ alert('আগে Connect করো।'); return; } pushToCloud(); alert('Pushed.'); });
+  document.getElementById('pullCloudBtn').addEventListener('click', ()=>{ if(!cloud.db){ alert('আগে Connect করো।'); return; } pullFromCloud(false); });
+  document.getElementById('disconnectCloudBtn').addEventListener('click', ()=>{ disconnectCloud(); document.getElementById('cloudModalScrim').classList.remove('show'); });
+
+  // ---------- CHAT / API CALLS ----------
+  function buildRequest(model, messages){
+    if(model.provider === 'openai'){
+      return { url: model.endpoint, headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + model.apiKey },
+        body: JSON.stringify({ model: model.modelId, messages: messages.map(m=>({role:m.role,content:m.content})) }) };
+    }
+    if(model.provider === 'anthropic'){
+      return { url: model.endpoint, headers: { 'Content-Type':'application/json', 'x-api-key': model.apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({ model: model.modelId, max_tokens: 1024, messages: messages.filter(m=>m.role!=='system').map(m=>({role:m.role,content:m.content})) }) };
+    }
+    if(model.provider === 'gemini'){
+      const base = model.endpoint.endsWith('/') ? model.endpoint : model.endpoint + '/';
+      return { url: base + model.modelId + ':generateContent?key=' + model.apiKey, headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ contents: messages.filter(m=>m.role!=='system').map(m=>({ role: m.role==='assistant'?'model':'user', parts:[{text:m.content}] })) }) };
+    }
+    throw new Error('unknown provider');
+  }
+  function parseResponse(model, json){
+    if(model.provider === 'openai'){ return json.choices && json.choices[0] && json.choices[0].message ? json.choices[0].message.content : JSON.stringify(json); }
+    if(model.provider === 'anthropic'){ return json.content && json.content[0] ? json.content[0].text : JSON.stringify(json); }
+    if(model.provider === 'gemini'){ return json.candidates && json.candidates[0] ? json.candidates[0].content.parts.map(p=>p.text).join('') : JSON.stringify(json); }
+    return JSON.stringify(json);
+  }
+  function looksLikeLimitError(status, bodyText){
+    if(status === 429) return true;
+    const t = (bodyText||'').toLowerCase();
+    return t.includes('quota') || t.includes('rate limit') || t.includes('insufficient') || t.includes('exceeded');
+  }
+  async function callModel(model, messages){
+    const req = buildRequest(model, messages);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(()=>controller.abort(), 25000);
+    let resp;
+    try{
+      resp = await fetch(req.url, { method:'POST', headers:req.headers, body:req.body, signal: controller.signal });
+    }catch(e){
+      if(e.name === 'AbortError'){ const err = new Error('Timed out after 25s — no response.'); err.status = 0; err.body = 'timeout'; throw err; }
+      const err = new Error('Network error — request could not reach the endpoint (blocked by CORS, offline, or bad URL).'); err.status = 0; err.body = e.message; throw err;
+    }finally{
+      clearTimeout(timeoutId);
+    }
+    const raw = await resp.text();
+    if(!resp.ok){ const err = new Error('HTTP ' + resp.status); err.status = resp.status; err.body = raw; throw err; }
+    let json; try{ json = JSON.parse(raw); }catch(e){ json = { raw }; }
+    return parseResponse(model, json);
+  }
+  function summarizeErr(bodyText){
+    if(!bodyText) return '';
+    try{ const j = JSON.parse(bodyText); return (j.error && (j.error.message||j.error)) || bodyText.slice(0,120); }
+    catch(e){ return bodyText.slice(0,120); }
+  }
+
+  async function sendMessage(){
+    const input = document.getElementById('input');
+    const text = input.value.trim();
+    if(!text) return;
+    if(!state.models.length){ alert('Add a model first.'); return; }
+    if(!state.currentChatId) newChat(true);
+
+    const chat = currentChat();
+    if(chat.title === 'New chat') chat.title = text.slice(0,40);
+    state.history.push({ role:'user', content:text });
+    input.value=''; autoGrow(input);
+    renderChatList(); renderMessages();
+
+    const convo = state.history.filter(m=>m.role!=='system');
+
+    if(state.mode === 'manual'){
+      const m = state.models.find(x=>x.id===state.manualModelId);
+      if(!m){ alert('Pick a model.'); return; }
+      state.history.push({role:'system', content:'sending to ' + m.name + '...'});
+      renderMessages();
+      try{
+        const reply = await callModel(m, convo);
+        m.lastOk = true; m.usedCount = (m.usedCount||0)+1;
+        state.history.pop();
+        state.history.push({ role:'assistant', content:reply, tag:m.name });
+      }catch(err){
+        state.history.pop();
+        if(looksLikeLimitError(err.status, err.body)){ m.limitHit = true; }
+        m.lastOk = false;
+        state.history.push({ role:'system', content: m.name + ' failed: ' + (err.status||'') + ' ' + summarizeErr(err.body) });
+      }
+      chat.updatedAt = Date.now();
+      saveAll(); renderRoster(); renderMessages();
+      return;
+    }
+
+    const sorted = [...state.models].sort((a,b)=>a.priority-b.priority);
+    let done = false;
+    for(const m of sorted){
+      if(!isAvailable(m)) continue;
+      state.history.push({role:'system', content:'trying ' + m.name + '...'});
+      renderMessages();
+      try{
+        const reply = await callModel(m, convo);
+        m.lastOk = true; m.usedCount = (m.usedCount||0)+1;
+        state.history.pop();
+        state.history.push({ role:'assistant', content:reply, tag:m.name });
+        done = true;
+        chat.updatedAt = Date.now();
+        saveAll(); renderRoster(); renderMessages();
+        break;
+      }catch(err){
+        state.history.pop();
+        if(looksLikeLimitError(err.status, err.body)){ m.limitHit = true; }
+        m.lastOk = false;
+        saveLocal(); renderRoster();
+      }
+    }
+    if(!done){
+      state.history.push({ role:'system', content:'All models unavailable right now — check keys, limits, or endpoints.' });
+      renderMessages();
+    }
+  }
+
+  document.getElementById('sendBtn').addEventListener('click', sendMessage);
+  const inputEl = document.getElementById('input');
+  inputEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(); } });
+  function autoGrow(el){ el.style.height='auto'; el.style.height = Math.min(el.scrollHeight,140)+'px'; }
+  inputEl.addEventListener('input', ()=>autoGrow(inputEl));
+
+  // ---------- INIT ----------
+  loadLocal();
+  if(!state.chats.length) newChat(true);
+  else { state.currentChatId = state.chats[0].id; state.history = state.chats[0].messages; }
+  renderRoster(); renderChatList(); renderMessages(); renderCloudStatus(); renderProjects();
+  if(cloud.config && cloud.syncId){ connectCloud(JSON.stringify(cloud.config), cloud.syncId, true); }
+})();
+</script>
+</body>
+</html>
